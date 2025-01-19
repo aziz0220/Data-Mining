@@ -31,6 +31,12 @@ numerical_vars <- setdiff(numerical_vars, c("G3", "G3_binary"))
 normalize <- function(x) {(x - min(x)) / (max(x) - min(x))}
 data[numerical_vars] <- lapply(data[numerical_vars], normalize)
 
+# **1. Correlation Heatmap**
+numerical_data <- data[, numerical_vars]
+cor_matrix <- cor(numerical_data)
+pheatmap(cor_matrix, cluster_rows = TRUE, cluster_cols = TRUE,
+         main = "Correlation Heatmap of Numerical Features", color = viridis::viridis(100))
+
 # Define predictor variables
 predictors <- setdiff(names(data), c("G3", "G3_binary"))
 
@@ -40,13 +46,16 @@ train_index <- createDataPartition(data$G3_binary, p = 0.7, list = FALSE)
 train_data <- data[train_index, ]
 test_data <- data[-train_index, ]
 
+# **2. Decision Tree Plot**
 # Build Decision Tree model
 dt_model <- rpart(G3_binary ~ ., data = train_data[, c(predictors, "G3_binary")], method = "class")
+rpart.plot(dt_model, extra = 1, main = "Decision Tree for Student Performance")
 
 # Predict on test set
 dt_pred <- predict(dt_model, test_data[, predictors], type = "class")
 dt_prob <- predict(dt_model, test_data[, predictors], type = "prob")
 
+# **3. Random Forest Model**
 # Build Random Forest model
 rf_model <- randomForest(G3_binary ~ ., data = train_data[, c(predictors, "G3_binary")], importance = TRUE)
 
@@ -54,20 +63,22 @@ rf_model <- randomForest(G3_binary ~ ., data = train_data[, c(predictors, "G3_bi
 rf_pred <- predict(rf_model, test_data[, predictors])
 rf_prob <- predict(rf_model, test_data[, predictors], type = "prob")
 
+# **4. Confusion Matrices**
 # Evaluate Decision Tree
 dt_cm <- confusionMatrix(dt_pred, test_data$G3_binary)
-dt_accuracy <- dt_cm$overall["Accuracy"]
-dt_precision <- dt_cm$byClass["Precision"]
-dt_recall <- dt_cm$byClass["Recall"]
-dt_f1 <- dt_cm$byClass["F1"]
+print("Decision Tree Confusion Matrix:")
+print(dt_cm$table)
+pheatmap(as.matrix(dt_cm$table), cluster_rows = FALSE, cluster_cols = FALSE,
+         main = "Decision Tree Confusion Matrix Heatmap", color = viridis::viridis(10))
 
 # Evaluate Random Forest
 rf_cm <- confusionMatrix(rf_pred, test_data$G3_binary)
-rf_accuracy <- rf_cm$overall["Accuracy"]
-rf_precision <- rf_cm$byClass["Precision"]
-rf_recall <- rf_cm$byClass["Recall"]
-rf_f1 <- rf_cm$byClass["F1"]
+print("Random Forest Confusion Matrix:")
+print(rf_cm$table)
+pheatmap(as.matrix(rf_cm$table), cluster_rows = FALSE, cluster_cols = FALSE,
+         main = "Random Forest Confusion Matrix Heatmap", color = viridis::viridis(10))
 
+# **5. ROC Curves Comparison**
 # ROC Curves
 dt_pred_obj <- prediction(dt_prob[,2], as.numeric(test_data$G3_binary))
 dt_perf <- performance(dt_pred_obj, "tpr", "fpr")
@@ -78,34 +89,24 @@ rf_perf <- performance(rf_pred_obj, "tpr", "fpr")
 rf_auc <- performance(rf_pred_obj, "auc")@y.values[[1]]
 
 # Plot ROC curves
-plot(dt_perf, col = "blue", main = "ROC Curves Comparison")
+plot(dt_perf, col = "blue", main = "ROC Curves Comparison", xlab = "False Positive Rate", ylab = "True Positive Rate")
 plot(rf_perf, col = "red", add = TRUE)
-legend("bottomright", 
+legend("bottomright",
        legend = c(paste("Decision Tree (AUC =", round(dt_auc, 3), ")"),
                   paste("Random Forest (AUC =", round(rf_auc, 3), ")")),
        col = c("blue", "red"),
        lty = 1)
 
-# Confusion Matrix Heatmaps
-pheatmap(as.matrix(dt_cm$table), cluster_rows = FALSE, cluster_cols = FALSE, 
-         main = "Decision Tree Confusion Matrix Heatmap", color = viridis::viridis(10))
+# **6. Metric Comparison for Each Class**
+# Decision Tree metrics by class
+print("Decision Tree Metrics by Class:")
+print(dt_cm$byClass)
 
-pheatmap(as.matrix(rf_cm$table), cluster_rows = FALSE, cluster_cols = FALSE, 
-         main = "Random Forest Confusion Matrix Heatmap", color = viridis::viridis(10))
+# Random Forest metrics by class
+print("Random Forest Metrics by Class:")
+print(rf_cm$byClass)
 
-# Compare results
-results_comparison <- data.frame(
-  Model = c("Decision Tree", "Random Forest"),
-  Accuracy = c(dt_accuracy, rf_accuracy),
-  Precision = c(dt_precision, rf_precision),
-  Recall = c(dt_recall, rf_recall),
-  F1_Score = c(dt_f1, rf_f1)
-)
-
-print("Model Comparison Results:")
-print(results_comparison)
-
-# Feature Importance for Random Forest
+# **7. Feature Importance for Random Forest**
 rf_importance <- importance(rf_model)
 rf_importance_df <- data.frame(Feature = row.names(rf_importance),
                                Importance = rf_importance[, "MeanDecreaseGini"])
